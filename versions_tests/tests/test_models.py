@@ -38,7 +38,8 @@ from versions_tests.models import (
     Award, B, C1, C2, C3, City, Classroom, Directory, Fan, Mascot, NonFan,
     Observer, Person, Player, Professor, Pupil,
     RabidFan, Student, Subject, Teacher, Team, Wine, WineDrinker,
-    WineDrinkerHat, WizardFan
+    WineDrinkerHat, WizardFan, Scholar, Assesment, ScholarAssesment,
+    Patient, Record
 )
 
 
@@ -3101,7 +3102,7 @@ class DetachTest(TestCase):
         c1_identity = c1.identity
         c2 = c1.detach()
         c2.save()
-        c1 = City.objects.current.get(pk=c1_identity)
+        c1 = City.objects.current.get(pk=c1.id)
         self.assertEqual(c1.name, c2.name)
         self.assertEqual(c2.id, c2.identity)
         self.assertNotEqual(c1.id, c2.id)
@@ -3351,3 +3352,226 @@ class PublishedVersionListGetTest(TestCase):
 
         # Testing if the result of get_published_version_list matches the expected result                                                                                         flat=True)
         self.assertEqual(list(actual_result), expected_result)
+
+
+class CloneTest(TestCase):
+    def setUp(self):
+        self.c1 = City.objects.create(name="Nova")
+        self.c2 = City.objects.create(name="Trevor")
+
+    def test_various_parameters(self):
+        c2 = self.c1.clone()
+
+        # Testing that only one object exists in the current time
+        self.assertEqual(City.objects.as_of().get(identity=self.c1.identity), c2)
+
+        c3 = c2.clone(keep_prev_version=True)
+
+        # Since previous version is preserved so both objects should exist
+        self.assertEqual(City.objects.as_of().filter(identity=self.c1.identity).count(), 2)
+
+        # Testing if properties are cloned properly
+        self.assertEqual([c3.identity, c3.name, c3.version_birth_date], [c2.identity, c2.name, c2.version_birth_date])
+
+    def test_clone_properties(self):
+        old_c2_id = self.c2.id
+        c22 = self.c2.clone()
+
+        # Testing if ids of clones did not match
+        self.assertNotEqual(c22.id, old_c2_id)
+
+        # Testing if historic object id did not get changed
+        self.assertEqual(self.c2.id, old_c2_id)
+
+
+class CloneM2MThroughRelTest(TestCase):
+    def setUp(self):
+        self.s1 = Scholar.objects.create(name="Adam")
+        self.s2 = Scholar.objects.create(name="Hughes")
+        self.a1 = Assesment.objects.create(name="spanish")
+        self.a2 = Assesment.objects.create(name="english")
+
+    def test_m2m_rel(self):
+        as1 = ScholarAssesment.objects.create(teacher="holmes", scholar=self.s1, assesment=self.a1)
+        as2 = ScholarAssesment.objects.create(teacher="putin", scholar=self.s1, assesment=self.a2)
+        s12 = self.s1.clone(clone_rels=True)
+
+        # Testing if properties are cloned properly
+        self.assertEqual([self.s1.version_end_date, self.s1.identity, self.s1.name, self.s1.version_birth_date],
+                         [s12.version_start_date, s12.identity, s12.name, s12.version_birth_date])
+
+        current_inter_relations_s1 = ScholarAssesment.objects.filter(scholar=self.s1, version_end_date__isnull=True)
+
+        # Testing if the intermediate relations of historic objects have expired or not
+        self.assertFalse(current_inter_relations_s1.exists())
+
+        old_inter_relations_s1 = ScholarAssesment.objects.filter(scholar=self.s1)
+        inter_rels_s12 = ScholarAssesment.objects.filter(scholar=s12, version_end_date=None)
+
+        # Testing if count of new relations formed are equal to the old relations
+        self.assertEqual(old_inter_relations_s1.count(), inter_rels_s12.count())
+
+        # Testing if the properties of through relations are cloned properly
+        self.assertEqual(set(old_inter_relations_s1.values_list('identity', 'teacher', 'assesment')),
+                         set(inter_rels_s12.values_list('identity', 'teacher', 'assesment')))
+
+        s12_rels = ScholarAssesment.objects.filter(scholar=s12, version_end_date__isnull=True)
+        s13 = s12.clone(keep_prev_version=True)
+        current_inter_relations_s12 = ScholarAssesment.objects.filter(scholar=s12, version_end_date__isnull=True)
+
+        # Testing if relations of prev object still remains the same
+        self.assertEqual(list(current_inter_relations_s12), list(s12_rels))
+
+        inter_relations_s12 = ScholarAssesment.objects.filter(scholar=s12, version_end_date__isnull=True)
+
+        # Testing the count of previous object relations
+        self.assertEqual(inter_relations_s12.count(), 2)
+
+        inter_relations_s13 = ScholarAssesment.objects.filter(scholar=s13)
+
+        # Testing that the new version doesnot create any through relations as clone_rels=False
+        self.assertFalse(inter_relations_s13.exists())
+
+    def test_reverse_m2m_rel(self):
+        a3 = Assesment.objects.create(name="maths")
+        s3 = Scholar.objects.create(name="Mcmurphy")
+
+        ScholarAssesment.objects.create(scholar=s3, assesment=a3, teacher="melvin")
+        ScholarAssesment.objects.create(scholar=self.s2, assesment=a3, teacher="louis")
+
+        a32 = a3.clone(clone_rels=True)
+
+        # Testing that the previous through table relations have expired
+        self.assertFalse(ScholarAssesment.objects.filter(assesment=a3, version_end_date__isnull=True).exists())
+
+        # Testing whether the new through table relations are properly cloned
+        self.assertEqual(set(ScholarAssesment.objects.filter(
+            assesment=a32, version_end_date__isnull=True).values_list(
+            'identity', 'version_birth_date', 'teacher', 'scholar'
+        )), set(ScholarAssesment.objects.filter(assesment=a3, version_end_date=a32.version_start_date).values_list(
+            'identity', 'version_birth_date', 'teacher', 'scholar'
+        )))
+
+        # Testing whether the count of new through table relations formed is right
+        self.assertEqual(ScholarAssesment.objects.filter(assesment=a32, version_end_date__isnull=True).count(),
+                         ScholarAssesment.objects.filter(assesment=a3, version_end_date=a32.version_start_date).count())
+
+        a33 = a32.clone()
+
+        # Testing whether through table relations of prev obj has expired
+        self.assertFalse(ScholarAssesment.objects.filter(assesment=a32, version_end_date__isnull=True).exists())
+
+        # Testing whether new object has created any through table relations as clone_rels=False
+        self.assertFalse(ScholarAssesment.objects.filter(assesment=a33).exists())
+
+    def test_m2m_rels_self(self):
+        p1 = Patient.objects.create(is_doctor=False)
+        p2 = Patient.objects.create(is_doctor=False)
+        d1 = Patient.objects.create(is_doctor=True)
+        d2 = Patient.objects.create(is_doctor=True)
+
+        Record.objects.create(patient=p1, doctor=d1)
+        Record.objects.create(patient=p1, doctor=d2)
+
+        p12 = p1.clone(clone_rels=True)
+
+        # Testing whether the through table relations of previous object has expired
+        self.assertListEqual(list(Record.objects.filter(patient=p1, version_end_date__isnull=True)), [])
+
+        # Testing whether the count of new through table relations is right
+        self.assertEqual(Record.objects.filter(patient=p1, version_end_date=p12.version_start_date).count(),
+                         Record.objects.filter(patient=p12, version_end_date__isnull=True).count())
+
+        # Testing whether the properties of through table relations have properly cloned
+        self.assertEqual(set(Record.objects.filter(patient=p1, version_end_date=p12.version_start_date).values_list(
+            'identity', 'version_birth_date', 'disease'
+        )), set(Record.objects.filter(patient=p12, version_end_date__isnull=True).values_list(
+            'identity', 'version_birth_date', 'disease'
+        )))
+
+        d22 = d2.clone(clone_rels=True)
+
+        # Testing if through table relations of previous object has expired
+        self.assertListEqual(list(Record.objects.filter(doctor=d2, version_end_date__isnull=True)), [])
+
+        # Testing if count of new object's through table relations is right
+        self.assertEqual(Record.objects.filter(doctor=d2, version_end_date=d22.version_start_date).count(),
+                         Record.objects.filter(doctor=d22, version_end_date__isnull=True).count())
+
+        # Testing that cloning of through table relations is done properly
+        self.assertEqual(set(Record.objects.filter(doctor=d2, version_end_date=d22.version_start_date).values_list(
+            'identity', 'version_birth_date', 'disease'
+        )), set(Record.objects.filter(doctor=d22, version_end_date__isnull=True).values_list(
+            'identity', 'version_birth_date', 'disease'
+        )))
+
+        p13 = p12.clone()
+
+        # Testing the through table relations of previous object has expired
+        self.assertListEqual(list(Record.objects.filter(patient=p12, version_end_date__isnull=True)), [])
+
+        # Testing that the new object has not created any through table relations as clone_rels=False
+        self.assertListEqual(list(Record.objects.filter(patient=p13)), [])
+
+
+class CloneM2MTest(TestCase):
+    def setUp(self):
+        self.s1 = Subject.objects.create(name='maths')
+        self.s2 = Subject.objects.create(name='english')
+        self.o1 = Observer.objects.create(name='trump')
+        self.o2 = Observer.objects.create(name='gandhi')
+
+    def test_m2m_rel(self):
+        self.s1.observers.add(self.o1)
+        sleep(0.1)
+        self.s1.observers.add(self.o2)
+
+        s12 = self.s1.clone(clone_rels=True)
+
+        # Testing if previous object M2M relations have expired
+        self.assertListEqual(list(self.s1.observers.as_of().all()), [])
+
+        # Testing if new object's M2M relations have properly been cloned
+        self.assertEqual(list(self.s1.observers.as_of(
+            self.s1.version_end_date - datetime.timedelta(microseconds=1)).all(
+
+        )), list(s12.observers.as_of().all()))
+
+        # Testing that no extra M2M relations are formed
+        self.assertEqual(s12.observers.all().count(), 2)
+
+        s12_observers = s12.observers.as_of().all()
+
+        s13 = s12.clone(keep_prev_version=True)
+
+        # Testing that the previous object's M2M relations are still same
+        self.assertEqual(list(s12.observers.as_of().all()), list(s12_observers))
+
+        # Testing if new object has not created any M2M relations as clone_rels=False
+        self.assertListEqual(list(s13.observers.all()), [])
+
+
+
+    def test_reverse_m2m_rel(self):
+        sleep(0.1)
+        self.s2.observers.add(self.o1)
+        o12 = self.o1.clone(clone_rels=True)
+
+        # Testing if prev object's M2M relations have expired
+        self.assertListEqual(list(self.o1.subjects.as_of().all()), [])
+
+        # Testing if new objects M2M relations are properly cloned
+        self.assertEqual(list(self.o1.subjects.as_of(
+            self.o1.version_end_date - datetime.timedelta(microseconds=1)).all(
+
+        )), list(o12.subjects.as_of().all()))
+
+        o12_subjects = o12.subjects.as_of().all()
+
+        o13 = o12.clone(keep_prev_version=True)
+
+        # Testing if prev object's M2M relations are still same
+        self.assertEqual(list(o12.subjects.as_of().all()), list(o12_subjects))
+
+        # Testing if new object has not created any M2M relations as clone_rels=False
+        self.assertListEqual(list(o13.subjects.all()), [])

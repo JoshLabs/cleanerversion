@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from django.db.models import CharField, IntegerField, Model, ForeignKey, \
-    CASCADE
+    CASCADE, BooleanField
 from django.db.models.deletion import DO_NOTHING, PROTECT, SET, SET_NULL
 from django.utils.encoding import python_2_unicode_compatible
 
@@ -281,3 +281,28 @@ class Person(Versionable):
     name = CharField(max_length=200)
     children = VersionedManyToManyField('self', symmetrical=False,
                                         related_name='parents')
+
+# NewCloneTest models
+# NewCloneRelationsTest models
+class Assesment(Versionable):
+    name = CharField(max_length=50)
+
+
+class Scholar(Versionable):
+    name = CharField(max_length=50)
+    assesments = VersionedManyToManyField(Assesment, through='ScholarAssesment', related_name='scholars')
+
+
+class ScholarAssesment(Versionable):
+    teacher = CharField(max_length=50)
+    scholar = VersionedForeignKey(Scholar)
+    assesment = VersionedForeignKey(Assesment)
+
+class Patient(Versionable):
+    is_doctor = BooleanField(default=False)
+    doctors = VersionedManyToManyField('self', through='Record', related_name='patients', symmetrical=False)
+
+class Record(Versionable):
+    disease = CharField(max_length=50)
+    patient = VersionedForeignKey(Patient, related_name='patient_records')
+    doctor = VersionedForeignKey(Patient, related_name='doctor_records')

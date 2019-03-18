@@ -12,6 +12,7 @@ from django.db.models.fields.related_descriptors import \
 from django.db.models.query_utils import Q
 from django.utils.functional import cached_property
 
+from versions.models import Versionable
 from versions.util import get_utc_now
 
 
@@ -76,17 +77,17 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
         # CleanerVersion change 2: make rel_obj_attr return a tuple with
         # the object's identity.
         # rel_obj_attr = self.field.get_foreign_related_value
-        def versioned_fk_rel_obj_attr(versioned_rel_obj):
-            return versioned_rel_obj.identity,
+        # def versioned_fk_rel_obj_attr(versioned_rel_obj):
+        #     return versioned_rel_obj.identity,
 
-        rel_obj_attr = versioned_fk_rel_obj_attr
+        rel_obj_attr = self.field.get_foreign_related_value
         instance_attr = self.field.get_local_related_value
         instances_dict = {instance_attr(inst): inst for inst in instances}
         # CleanerVersion change 3: fake the related field so that it provides
         # a name of 'identity'.
-        # related_field = self.field.foreign_related_fields[0]
-        related_field = namedtuple('VersionedRelatedFieldTuple', 'name')(
-            'identity')
+        related_field = self.field.foreign_related_fields[0]
+        # related_field = namedtuple('VersionedRelatedFieldTuple', 'name')(
+        #     'identity')
 
         # FIXME: This will need to be revisited when we introduce support for
         # composite fields. In the meantime we take this practical approach to
@@ -94,10 +95,8 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
         # (related_name ends with a '+'). Refs #21410.
         # The check for len(...) == 1 is a special case that allows the query
         # to be join-less and smaller. Refs #21760.
-        if self.field.remote_field.is_hidden() or len(
-                self.field.foreign_related_fields) == 1:
-            query = {'%s__in' % related_field.name: set(
-                instance_attr(inst)[0] for inst in instances)}
+        if self.field.remote_field.is_hidden() or len(self.field.foreign_related_fields) == 1:
+            query = {'%s__in' % related_field.name: set(instance_attr(inst)[0] for inst in instances)}
         else:
             query = {'%s__in' % self.field.related_query_name(): instances}
         queryset = queryset.filter(**query)
@@ -120,15 +119,16 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
     def get_queryset(self, **hints):
         queryset = self.field.remote_field.model.objects\
             .db_manager(hints=hints).all()
-        if hasattr(queryset, 'querytime'):
-            if 'instance' in hints:
-                instance = hints['instance']
-                if hasattr(instance, '_querytime'):
-                    if instance._querytime.active and \
-                                    instance._querytime != queryset.querytime:
-                        queryset = queryset.as_of(instance._querytime.time)
-                else:
-                    queryset = queryset.as_of(None)
+        # Removed use of querytime from queryset
+        # if hasattr(queryset, 'querytime'):
+        #     if 'instance' in hints:
+        #         instance = hints['instance']
+        #         if hasattr(instance, '_querytime'):
+        #             if instance._querytime.active and \
+        #                             instance._querytime != queryset.querytime:
+        #                 queryset = queryset.as_of(instance._querytime.time)
+        #         else:
+        #             queryset = queryset.as_of(None)
         return queryset
 
     def __get__(self, instance, cls=None):
@@ -146,8 +146,7 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
         if instance is None:
             return self
 
-        current_elt = super(self.__class__, self).__get__(instance,
-                                                          cls)
+        current_elt = super(self.__class__, self).__get__(instance, cls)
 
         if not current_elt:
             return None
@@ -157,18 +156,18 @@ class VersionedForwardManyToOneDescriptor(ForwardManyToOneDescriptor):
                             str(type(current_elt)) +
                             ", which is not a subclass of Versionable")
 
-        if hasattr(instance, '_querytime'):
-            # If current_elt matches the instance's querytime, there's no
-            # need to make a database query.
-            if matches_querytime(current_elt, instance._querytime):
-                current_elt._querytime = instance._querytime
-                return current_elt
+        return current_elt
 
-            return current_elt.__class__.objects.as_of(
-                instance._querytime.time).get(identity=current_elt.identity)
-        else:
-            return current_elt.__class__.objects.current.get(
-                identity=current_elt.identity)
+        # Removed use of querytime
+        # if hasattr(instance, '_querytime'):
+        #     # If current_elt matches the instance's querytime, there's no
+        #     # need to make a database query.
+        #     if matches_querytime(current_elt, instance._querytime):
+        #         current_elt._querytime = instance._querytime
+        #         return current_elt
+        #
+        #     return current_elt.__class__.objects.as_of(
+        #         instance._querytime.time).get(identity=current_elt.identity)
 
 
 vforward_many_to_one_descriptor_class = VersionedForwardManyToOneDescriptor
@@ -182,14 +181,6 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
         rel_field = self.field
 
         class VersionedRelatedManager(manager_cls):
-            def __init__(self, instance):
-                super(VersionedRelatedManager, self).__init__(instance)
-
-                # This is a hack, in order to get the versioned related objects
-                for key in self.core_filters.keys():
-                    if '__exact' in key or '__' not in key:
-                        self.core_filters[key] = instance.identity
-
             def get_queryset(self):
                 from versions.models import VersionedQuerySet
 
@@ -197,10 +188,10 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                 # Do not set the query time if it is already correctly set.
                 # queryset.as_of() returns a clone of the queryset, and this
                 # will destroy the prefetched objects cache if it exists.
-                if isinstance(queryset, VersionedQuerySet) \
-                        and self.instance._querytime.active \
-                        and queryset.querytime != self.instance._querytime:
-                    queryset = queryset.as_of(self.instance._querytime.time)
+                # if isinstance(queryset, VersionedQuerySet) \
+                #         and self.instance._querytime.active \
+                #         and queryset.querytime != self.instance._querytime:
+                #     queryset = queryset.as_of(self.instance._querytime.time)
                 return queryset
 
             def get_prefetch_queryset(self, instances, queryset=None):
@@ -223,24 +214,33 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
 
                 queryset._add_hints(instance=instances[0])
                 queryset = queryset.using(queryset._db or self._db)
-                instance_querytime = instances[0]._querytime
-                if instance_querytime.active:
-                    if queryset.querytime.active and \
-                                    queryset.querytime.time != \
-                                    instance_querytime.time:
-                        raise ValueError(
-                            "A Prefetch queryset that specifies an as_of time "
-                            "must match the as_of of the base queryset.")
-                    else:
-                        queryset.querytime = instance_querytime
+                # instance_querytime = instances[0]._querytime
+                # We would not be using querytime
+                # if instance_querytime.active:
+                #     if queryset.querytime.active and \
+                #                     queryset.querytime.time != \
+                #                     instance_querytime.time:
+                #         raise ValueError(
+                #             "A Prefetch queryset that specifies an as_of time "
+                #             "must match the as_of of the base queryset.")
+                #     else:
+                #         queryset.querytime = instance_querytime
 
                 rel_obj_attr = rel_field.get_local_related_value
                 instance_attr = rel_field.get_foreign_related_value
                 # Use identities instead of ids so that this will work with
                 # versioned objects.
-                instances_dict = {(inst.identity,): inst for inst in instances}
-                identities = [inst.identity for inst in instances]
-                query = {'%s__identity__in' % rel_field.name: identities}
+
+                # Get to_field of the relation
+                if rel_field.to_fields is not None and len(rel_field.to_fields) > 0:
+                    to_field = rel_field.to_fields[0]
+                else:
+                    to_field = 'pk'
+
+                # Create dictionary on the to_field
+                instances_dict = {(getattr(inst, to_field),): inst for inst in instances}
+                obj_ids = [inst.id for inst in instances]
+                query = {'%s__id__in' % rel_field.name: obj_ids}
                 queryset = queryset.filter(**query)
 
                 # Since we just bypassed this class' get_queryset(), we must
@@ -265,7 +265,8 @@ class VersionedReverseManyToOneDescriptor(ReverseManyToOneDescriptor):
                         raise TypeError(
                             "Trying to add a non-Versionable to a "
                             "VersionedForeignKey relationship")
-                    cloned_objs += (obj.clone(),)
+                    # Cloned object for m2m table need to be in published state
+                    cloned_objs += (obj.clone(clone_status=Versionable.STATUS_PUBLISHED),)
                 super(VersionedRelatedManager, self).add(*cloned_objs,
                                                          **kwargs)
 
@@ -436,10 +437,10 @@ def create_versioned_forward_many_to_many_manager(superclass, rel,
             intermediary model.
             """
             queryset = super(VersionedManyRelatedManager, self).get_queryset()
-            if hasattr(queryset, 'querytime'):
-                if self.instance._querytime.active and \
-                                self.instance._querytime != queryset.querytime:
-                    queryset = queryset.as_of(self.instance._querytime.time)
+            # if hasattr(queryset, 'querytime'):
+            #     if self.instance._querytime.active and \
+            #                     self.instance._querytime != queryset.querytime:
+            #         queryset = queryset.as_of(self.instance._querytime.time)
             return queryset
 
         def _remove_items(self, source_field_name, target_field_name, *objs):
@@ -517,6 +518,7 @@ def create_versioned_forward_many_to_many_manager(superclass, rel,
                     super(self.__class__, self).__init__(*args, **kwargs)
                     self.version_birth_date = timestamp
                     self.version_start_date = timestamp
+                    self.status = Versionable.STATUS_DRAFT
 
                 # Through-classes have an empty constructor, so it can easily
                 # be overwritten when needed;

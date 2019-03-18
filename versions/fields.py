@@ -61,61 +61,61 @@ class VersionedForeignKey(ForeignKey):
                                                 current_sql=current_sql,
                                                 alias=alias,
                                                 remote_alias=remote_alias)])
-
-    def get_joining_columns(self, reverse_join=False):
-        """
-        Get and return joining columns defined by this foreign key relationship
-
-        :return: A tuple containing the column names of the tables to be
-            joined (<local_col_name>, <remote_col_name>)
-        :rtype: tuple
-        """
-        source = self.reverse_related_fields if reverse_join \
-            else self.related_fields
-        joining_columns = tuple()
-        for lhs_field, rhs_field in source:
-            lhs_col_name = lhs_field.column
-            rhs_col_name = rhs_field.column
-            # Test whether
-            # - self is the current ForeignKey relationship
-            # - self was not auto_created (e.g. is not part of a M2M
-            #   relationship)
-            if self is lhs_field and not self.auto_created:
-                if rhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
-                    rhs_col_name = Versionable.OBJECT_IDENTIFIER_FIELD
-            elif self is rhs_field and not self.auto_created:
-                if lhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
-                    lhs_col_name = Versionable.OBJECT_IDENTIFIER_FIELD
-            joining_columns = joining_columns + ((lhs_col_name, rhs_col_name),)
-        return joining_columns
-
-    def get_reverse_related_filter(self, obj):
-        base_filter = dict()
-        timestamp_q = None
-        for lh_field, rh_field in self.related_fields:
-            if isinstance(obj, Versionable) and \
-                    rh_field.attname == \
-                    Versionable.VERSION_IDENTIFIER_FIELD:
-                base_filter.update(**{
-                    Versionable.OBJECT_IDENTIFIER_FIELD:
-                        getattr(obj, lh_field.attname)})
-                if hasattr(obj, 'as_of') and obj.as_of is not None:
-                    start_date_q = Q(version_start_date__lt=obj.as_of)
-                    end_date_q = Q(version_end_date__gte=obj.as_of) | Q(
-                        version_end_date__isnull=True)
-                    timestamp_q = start_date_q & end_date_q
-            else:
-                base_filter.update(
-                    **{rh_field.attname: getattr(obj, lh_field.attname)})
-        base_q = Q(**base_filter)
-        if timestamp_q:
-            base_q &= timestamp_q
-        descriptor_filter = self.get_extra_descriptor_filter(obj)
-        if isinstance(descriptor_filter, dict):
-            return base_q & Q(**descriptor_filter)
-        elif descriptor_filter:
-            return base_q & descriptor_filter
-        return base_q
+    #
+    # def get_joining_columns(self, reverse_join=False):
+    #     """
+    #     Get and return joining columns defined by this foreign key relationship
+    #
+    #     :return: A tuple containing the column names of the tables to be
+    #         joined (<local_col_name>, <remote_col_name>)
+    #     :rtype: tuple
+    #     """
+    #     source = self.reverse_related_fields if reverse_join \
+    #         else self.related_fields
+    #     joining_columns = tuple()
+    #     for lhs_field, rhs_field in source:
+    #         lhs_col_name = lhs_field.column
+    #         rhs_col_name = rhs_field.column
+    #         # Test whether
+    #         # - self is the current ForeignKey relationship
+    #         # - self was not auto_created (e.g. is not part of a M2M
+    #         #   relationship)
+    #         if self is lhs_field and not self.auto_created:
+    #             if rhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
+    #                 rhs_col_name = Versionable.VERSION_IDENTIFIER_FIELD
+    #         elif self is rhs_field and not self.auto_created:
+    #             if lhs_col_name == Versionable.VERSION_IDENTIFIER_FIELD:
+    #                 lhs_col_name = Versionable.VERSION_IDENTIFIER_FIELD
+    #         joining_columns = joining_columns + ((lhs_col_name, rhs_col_name),)
+    #     return joining_columns
+    #
+    # def get_reverse_related_filter(self, obj):
+    #     base_filter = dict()
+    #     timestamp_q = None
+    #     for lh_field, rh_field in self.related_fields:
+    #         if isinstance(obj, Versionable) and \
+    #                 rh_field.attname == \
+    #                 Versionable.VERSION_IDENTIFIER_FIELD:
+    #             base_filter.update(**{
+    #                 Versionable.VERSION_IDENTIFIER_FIELD:
+    #                     getattr(obj, lh_field.attname)})
+    #             if hasattr(obj, 'as_of') and obj.as_of is not None:
+    #                 start_date_q = Q(version_start_date__lt=obj.as_of)
+    #                 end_date_q = Q(version_end_date__gt=obj.as_of) | Q(
+    #                     version_end_date__isnull=True)
+    #                 timestamp_q = start_date_q & end_date_q
+    #         else:
+    #             base_filter.update(
+    #                 **{rh_field.attname: getattr(obj, lh_field.attname)})
+    #     base_q = Q(**base_filter)
+    #     if timestamp_q:
+    #         base_q &= timestamp_q
+    #     descriptor_filter = self.get_extra_descriptor_filter(obj)
+    #     if isinstance(descriptor_filter, dict):
+    #         return base_q & Q(**descriptor_filter)
+    #     elif descriptor_filter:
+    #         return base_q & descriptor_filter
+    #     return base_q
 
 
 class VersionedManyToManyField(ManyToManyField):
@@ -187,6 +187,10 @@ class VersionedManyToManyField(ManyToManyField):
         # FIXME: This is usually done at django/db/models/base.py:284,
         # invoked by create_many_to_many_intermediary_model at
         #   django.db.models.fields.related:1048
+
+
+        # FIXME: We can remove VFK from through table since all relation are
+        #           done using pk and we are removing dependency on querytime
 
         def set_managed(model, related, through):
             through._meta.managed = model._meta.managed or \
@@ -314,6 +318,8 @@ class VersionedExtraWhere(ExtraWhere):
 class VersionedWhereNode(WhereNode):
     def as_sql(self, qn, connection):
         """
+        This method logic has been commented out as we are not going to need
+        query time logic
         This method identifies joined table aliases in order for
         VersionedExtraWhere.as_sql() to be able to add time restrictions for
         those tables based on the VersionedQuery's querytime value.
@@ -323,22 +329,23 @@ class VersionedWhereNode(WhereNode):
         :param connection: A DB connection
         :return: A tuple consisting of (sql_string, result_params)
         """
+
         # self.children is an array of VersionedExtraWhere-objects
-        for child in self.children:
-            if isinstance(child, VersionedExtraWhere) and not child.params:
-                # Django 1.7 & 1.8 handles compilers as objects
-                _query = qn.query
-                query_time = _query.querytime.time
-                apply_query_time = _query.querytime.active
-                alias_map = _query.alias_map
-                # In Django 1.8, use the Join objects in alias_map
-                self._set_child_joined_alias(child, alias_map)
-                if apply_query_time:
-                    # Add query parameters that have not been added till now
-                    child.set_as_of(query_time)
-                else:
-                    # Remove the restriction if it's not required
-                    child.sqls = []
+        # for child in self.children:
+        #     if isinstance(child, VersionedExtraWhere) and not child.params:
+        #         # Django 1.7 & 1.8 handles compilers as objects
+        #         _query = qn.query
+        #         query_time = _query.querytime.time
+        #         apply_query_time = _query.querytime.active
+        #         alias_map = _query.alias_map
+        #         # In Django 1.8, use the Join objects in alias_map
+        #         self._set_child_joined_alias(child, alias_map)
+        #         if apply_query_time:
+        #             # Add query parameters that have not been added till now
+        #             child.set_as_of(query_time)
+        #         else:
+        #             # Remove the restriction if it's not required
+        #             child.sqls = []
         return super(VersionedWhereNode, self).as_sql(qn, connection)
 
     @staticmethod

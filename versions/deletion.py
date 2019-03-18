@@ -49,14 +49,14 @@ class VersionedCollector(Collector):
             # send pre_delete signals, but not for versionables
             for model, obj in self.instances_with_model():
                 if not model._meta.auto_created:
-                    if self.is_versionable(model):
-                        # By default, no signal is sent when deleting a
-                        # Versionable.
-                        self.versionable_pre_delete(obj, timestamp)
-                    else:
-                        signals.pre_delete.send(
-                            sender=model, instance=obj, using=self.using
-                        )
+                    # if self.is_versionable(model):
+                    #     # By default, no signal is sent when deleting a
+                    #     # Versionable.
+                    #     self.versionable_pre_delete(obj, timestamp)
+                    # else:
+                    signals.pre_delete.send(
+                        sender=model, instance=obj, using=self.using
+                    )
 
             # do not do fast deletes
             if self.fast_deletes:
@@ -78,16 +78,22 @@ class VersionedCollector(Collector):
                         if not (isinstance(
                                     field,
                                     versions.fields.VersionedForeignKey) and
-                                field.remote_field.on_delete == CASCADE):
+                                field.remote_field.on_delete == CASCADE) and field.name not in model.UNCHECKED_FIELDS:
                             for instance in instances:
-                                # Clone before updating
-                                cloned = id_map.get(instance.pk, None)
-                                if not cloned:
-                                    cloned = instance.clone()
-                                id_map[instance.pk] = cloned
-                                updated_instances.add(cloned)
-                                # TODO: instance should get updated with new
-                                # values from clone ?
+                                # Create new clone only when version is currently active.
+                                if not instance.version_end_date:
+                                    # Clone before updating
+                                    cloned = id_map.get(instance.pk, None)
+                                    if not cloned:
+                                        cloned = instance.clone(clone_rels=True)
+                                        if instance.status == versions.models.Versionable.STATUS_PUBLISHED:
+                                            cloned._published = True
+                                            cloned.parent = instance
+                                            cloned.save()
+                                    id_map[instance.pk] = cloned
+                                    updated_instances.add(cloned)
+                                    # TODO: instance should get updated with new
+                                    # values from clone ?
                         instances_for_fieldvalues[
                             (field, value)] = updated_instances
 
@@ -113,11 +119,12 @@ class VersionedCollector(Collector):
             for model, instances in self.data.items():
                 if self.is_versionable(model):
                     for instance in instances:
-                        self.versionable_delete(instance, timestamp)
-                        if not model._meta.auto_created:
-                            # By default, no signal is sent when deleting a
-                            # Versionable.
-                            self.versionable_post_delete(instance, timestamp)
+                        if not instance.version_end_date:
+                            self.versionable_delete(instance, timestamp)
+                            if not model._meta.auto_created:
+                                # By default, no signal is sent when deleting a
+                                # Versionable.
+                                self.versionable_post_delete(instance, timestamp)
                 else:
                     query = sql.DeleteQuery(model)
                     pk_list = [obj.pk for obj in instances]

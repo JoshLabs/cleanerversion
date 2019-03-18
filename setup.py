@@ -57,4 +57,4 @@ setup(name='CleanerVersion',
           'Programming Language :: Python :: 3.6',
           'Topic :: Database',
           'Topic :: System :: Archiving',
-      ])
+      ], install_requires=['django'])

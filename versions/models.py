@@ -36,7 +36,7 @@ from versions.util import get_utc_now
 
 
 def get_utc_now():
-    return datetime.datetime.utcnow().replace(tzinfo=utc)
+    return datetime.datetime.utcnow().replace()
 
 
 def validate_uuid(uuid_obj):
@@ -150,6 +150,42 @@ class VersionManager(models.Manager):
 
         return self.adjust_version_as_of(previous, relations_as_of)
 
+    def current_published_version(self, object, relations_as_of=None, check_db=False):
+
+        """
+        Return the current published version of the given object.
+
+        The current published version is the one having its version_end_date set
+        to NULL and is_draft set to False.
+        If there is not such a version then it means the object has been
+        'deleted' and so there is no current version available. In this case
+        the function returns None.
+
+        Note that if check_db is False and object's version_end_date is None,
+        this does not check the database to see if there is a newer version
+        (perhaps created by some other code), it simply returns the passed
+        object.
+
+        ``relations_as_of`` is used to fix the point in time for the version;
+        this affects which related objects are returned when querying for
+        object relations. See ``VersionManager.version_as_of`` for details on
+        valid ``relations_as_of`` values.
+
+        :param Versionable object: object whose current published version will be
+            returned.
+        :param mixed relations_as_of: determines point in time used to access
+            relations. 'start'|'end'|datetime|None
+        :param bool check_db: Whether or not to look in the database for a
+            more recent version
+        :return: Versionable
+        """
+        if object.version_end_date is None and not object.is_draft and not check_db:
+            current = object
+        else:
+            current = self.current.filter(is_draft=False, identity=object.identity).first()
+
+        return self.adjust_version_as_of(current, relations_as_of)
+
     def current_version(self, object, relations_as_of=None, check_db=False):
         """
         Return the current version of the given object.
@@ -183,6 +219,18 @@ class VersionManager(models.Manager):
             current = self.current.filter(identity=object.identity).first()
 
         return self.adjust_version_as_of(current, relations_as_of)
+
+    def get_published_version_list(self, object):
+        """
+        Return the published version list of the given object.
+
+        The published version is the one having its is_draft set to True.
+
+        :param Versionable object: object whose published version list would be
+            returned.
+        :return: A VersionedQuerySet
+        """
+        return self.filter(is_draft=False, identity=object.identity).order_by('-version_start_date')
 
     @staticmethod
     def adjust_version_as_of(version, relations_as_of):
@@ -223,7 +271,7 @@ class VersionManager(models.Manager):
         elif relations_as_of == 'start':
             version.as_of = version.version_start_date
         elif isinstance(relations_as_of, datetime.datetime):
-            as_of = relations_as_of.astimezone(utc)
+            as_of = relations_as_of
             if not as_of >= version.version_start_date:
                 raise ValueError(
                     "Provided as_of '{}' is earlier than version's start "
@@ -599,7 +647,7 @@ class Versionable(models.Model):
     OBJECT_IDENTIFIER_FIELD = 'identity'
     VERSIONABLE_FIELDS = [VERSION_IDENTIFIER_FIELD, OBJECT_IDENTIFIER_FIELD,
                           'version_start_date',
-                          'version_end_date', 'version_birth_date']
+                          'version_end_date', 'version_birth_date', 'is_draft']
 
     if versions_settings.VERSIONS_USE_UUIDFIELD:
         id = models.UUIDField(primary_key=True)
@@ -632,6 +680,12 @@ class Versionable(models.Model):
     """version_birth_date contains the timestamp pointing to when the
     versionable has been created (independent of any version); This timestamp
     is bound to an identity"""
+
+    is_draft = models.BooleanField(default=False)
+    """is_draft is basically a check whether the model is published or still in
+    draft state. A draft state object which doesnot act as a normal versionable 
+    object. It doesnot come in list of versionable published objects. It can
+    never be the current object"""
 
     objects = VersionManager()
     """Make the versionable compliant with Django"""
@@ -763,7 +817,7 @@ class Versionable(models.Model):
         """
         return self.clone(forced_version_date=timestamp)
 
-    def clone(self, forced_version_date=None, in_bulk=False):
+    def clone(self, forced_version_date=None, in_bulk=False, is_draft=False):
         """
         Clones a Versionable and returns a fresh copy of the original object.
         Original source: ClonableMixin snippet
@@ -775,6 +829,8 @@ class Versionable(models.Model):
         :param in_bulk: whether not to write this objects to the database
             already, if not necessary; this value is usually set only
             internally for performance optimization
+        :param is_draft: whether the clone is in draft state or published
+            state
         :return: returns a fresh clone of the original object
             (with adjusted relations)
         """
@@ -813,8 +869,13 @@ class Versionable(models.Model):
         # set earlier_version's ID to a new UUID so the clone (later_version)
         # can get the old one -- this allows 'head' to always have the original
         # id allowing us to get at all historic foreign key relationships
-        earlier_version.id = self.uuid()
-        earlier_version.version_end_date = forced_version_date
+        if is_draft:
+            later_version.id = self.uuid()
+        else:
+            earlier_version.id = self.uuid()
+            earlier_version.version_end_date = forced_version_date
+
+        later_version.is_draft = is_draft
 
         if not in_bulk:
             # This condition might save us a lot of database queries if we are

@@ -6,12 +6,10 @@
 CleanerVersion for Django
 *************************
 
-.. image:: https://img.shields.io/travis/swisscom/cleanerversion/master.svg
-    :target: https://travis-ci.org/swisscom/cleanerversion
-.. image:: https://img.shields.io/coveralls/swisscom/cleanerversion/master.svg
-   :target: https://coveralls.io/r/swisscom/cleanerversion
-.. image:: https://img.shields.io/pypi/v/CleanerVersion.svg
-   :target: https://pypi.python.org/pypi/CleanerVersion
+.. image:: https://img.shields.io/travis/kshitij-burman/cleanerversion/master.svg
+    :target: https://travis-ci.org/kshitij-burman/cleanerversion
+.. image:: https://img.shields.io/coveralls/kshitij-burman/cleanerversion/master.svg
+   :target: https://coveralls.io/r/kshitij-burman/cleanerversion
 
 Abstract
 ========

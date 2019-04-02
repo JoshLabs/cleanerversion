@@ -942,6 +942,7 @@ class Versionable(models.Model):
         # Contrary to previous implementation we would assign a new UUID to every new versioned object
         later_version.id = None
         later_version.unique_id = self.uuid()
+        later_version.parent = earlier_version
         later_version.version_end_date = None
         later_version.version_start_date = forced_version_date
         keep_prev_rels = keep_prev_version or clone_status in [

@@ -743,7 +743,6 @@ class Versionable(models.Model):
 
     objects = VersionManager()
     all_objects = AllObjectsManager()
-    _base_manager = AllObjectsManager()
     """Make the versionable compliant with Django"""
 
     as_of = None
@@ -754,6 +753,7 @@ class Versionable(models.Model):
     class Meta:
         abstract = True
         unique_together = ('unique_id', 'identity')
+        base_manager_name = 'all_objects'
 
     def __init__(self, *args, **kwargs):
         super(Versionable, self).__init__(*args, **kwargs)

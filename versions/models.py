@@ -370,7 +370,7 @@ class VersionedQuerySet(QuerySet):
     delete.queryset_only = True
 
 
-class VersionManager(manager.BaseManager.from_queryset(VersionedQuerySet)):
+class VersionManager(manager.Manager.from_queryset(VersionedQuerySet)):
     """
     This is the Manager-class for any class that inherits from Versionable
     """
@@ -664,7 +664,7 @@ class AllObjectsQuerySet():
     Custom queryset for overriding the update/bulk_create method
     """
 
-class AllObjectsManager(manager.BaseManager.from_queryset(models.QuerySet)):
+class AllObjectsManager(manager.Manager):
     """
     Object manager to handle custom queryset for all objects
     """
@@ -1040,6 +1040,7 @@ class Versionable(models.Model):
                 # the new object cloned/created.
                 if clone_rels:
                     rel.id = None
+                    rel.unique_id = uuid.uuid1()
                     later_current.append(rel)
         # Perform the bulk changes rel.clone() did not perform because of the in_bulk
         # This saves a huge bunch of SQL queries:

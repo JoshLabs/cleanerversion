@@ -1190,7 +1190,9 @@ class Versionable(models.Model):
                 rel_field_names.append(field.attname)
 
         through_tables_set = set()
-        for rel in opts.get_all_related_many_to_many_objects():
+        for rel in [
+            field for field in opts.get_fields(include_hidden=True) if field.many_to_many and field.auto_created
+        ]:
             if rel.through not in through_tables_set:
                 through_tables_set.add(rel.through)
                 rel_field_names.append(rel.get_accessor_name())

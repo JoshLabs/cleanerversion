@@ -674,7 +674,7 @@ class Versionable(models.Model):
     """
     This is pretty much the central point for versioning objects.
     """
-    UNCHECKED_FIELDS = ['parent']
+    UNCHECKED_FIELDS = ['parent',]
     VERSION_IDENTIFIER_FIELD = 'unique_id'
     OBJECT_IDENTIFIER_FIELD = 'identity'
     VERSIONABLE_FIELDS = [VERSION_IDENTIFIER_FIELD, OBJECT_IDENTIFIER_FIELD,
@@ -734,6 +734,11 @@ class Versionable(models.Model):
 
     status = models.PositiveSmallIntegerField(choices=STATUS_CHOICES, default=STATUS_DRAFT,
                                               help_text="Every versionable instance needs to be in some state")
+    # TODO: Remove this after running the migration script from challenges to questionnaires
+    created_through_script = models.BooleanField(
+        default=False,
+        help_text='Temporary field to detect if objects are created through script'
+    )
     parent = models.ForeignKey('self', null=True, blank=True, help_text='Link to the parent version', on_delete=models.SET_NULL, to_field='unique_id')
     """
     This field represent current state of this instance.

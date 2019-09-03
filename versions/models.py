@@ -674,7 +674,7 @@ class Versionable(models.Model):
     """
     This is pretty much the central point for versioning objects.
     """
-    UNCHECKED_FIELDS = ['parent',]
+    UNCHECKED_FIELDS = ['parent']
     VERSION_IDENTIFIER_FIELD = 'unique_id'
     OBJECT_IDENTIFIER_FIELD = 'identity'
     VERSIONABLE_FIELDS = [VERSION_IDENTIFIER_FIELD, OBJECT_IDENTIFIER_FIELD,

@@ -734,6 +734,11 @@ class Versionable(models.Model):
 
     status = models.PositiveSmallIntegerField(choices=STATUS_CHOICES, default=STATUS_DRAFT,
                                               help_text="Every versionable instance needs to be in some state")
+    # TODO: Remove this after running the migration script from challenges to questionnaires
+    created_through_script = models.BooleanField(
+        default=False,
+        help_text='Temporary field to detect if objects are created through script'
+    )
     parent = models.ForeignKey('self', null=True, blank=True, help_text='Link to the parent version', on_delete=models.SET_NULL, to_field='unique_id')
     """
     This field represent current state of this instance.
@@ -743,7 +748,6 @@ class Versionable(models.Model):
 
     objects = VersionManager()
     all_objects = AllObjectsManager()
-    _base_manager = AllObjectsManager()
     """Make the versionable compliant with Django"""
 
     as_of = None
@@ -754,6 +758,7 @@ class Versionable(models.Model):
     class Meta:
         abstract = True
         unique_together = ('unique_id', 'identity')
+        base_manager_name = 'all_objects'
 
     def __init__(self, *args, **kwargs):
         super(Versionable, self).__init__(*args, **kwargs)
@@ -1190,7 +1195,9 @@ class Versionable(models.Model):
                 rel_field_names.append(field.attname)
 
         through_tables_set = set()
-        for rel in opts.get_all_related_many_to_many_objects():
+        for rel in [
+            field for field in opts.get_fields(include_hidden=True) if field.many_to_many and field.auto_created
+        ]:
             if rel.through not in through_tables_set:
                 through_tables_set.add(rel.through)
                 rel_field_names.append(rel.get_accessor_name())

@@ -1037,6 +1037,7 @@ class Versionable(models.Model):
                         cloned_relation = rel.clone(forced_version_date=clone.version_end_date, clone_status=clone_status,
                                       in_bulk=True, keep_prev_version=keep_prev_rels)
                         cloned_relation.parent = rel
+                        cloned_relation.identity = rel.identity
                         later_current.append(cloned_relation)
                 # else:
                 #     later_current_end.append(rel)

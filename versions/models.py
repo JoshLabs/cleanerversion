@@ -71,6 +71,16 @@ class VersionManager(models.Manager):
             qs.querytime = self.instance._querytime
         return qs
 
+    def _apply_rel_filters(self, queryset):
+        """
+        Providing this method for related fields to return updated filter
+        :param queryset:
+        :return:
+        """
+        if hasattr(self, 'instance') and hasattr(self.instance, '_querytime'):
+            queryset.querytime = self.instance._querytime
+        return queryset
+
     def as_of(self, time=None):
         """
         Filters Versionables at a given time

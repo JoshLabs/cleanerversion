@@ -374,7 +374,6 @@ class VersionManager(manager.Manager.from_queryset(VersionedQuerySet)):
     """
     This is the Manager-class for any class that inherits from Versionable
     """
-    use_for_related_fields = True
 
     def get_queryset(self):
         """
@@ -387,6 +386,16 @@ class VersionManager(manager.Manager.from_queryset(VersionedQuerySet)):
         if hasattr(self, 'instance') and hasattr(self.instance, '_querytime'):
             qs.querytime = self.instance._querytime
         return qs
+
+    def _apply_rel_filters(self, queryset):
+        """
+        Providing this method for related fields to return updated filter
+        :param queryset:
+        :return:
+        """
+        if hasattr(self, 'instance') and hasattr(self.instance, '_querytime'):
+            queryset.querytime = self.instance._querytime
+        return queryset
 
     def as_of(self, time=None):
         """

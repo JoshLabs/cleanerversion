@@ -57,7 +57,6 @@ class VersionManager(models.Manager):
     """
     This is the Manager-class for any class that inherits from Versionable
     """
-    use_for_related_fields = True
 
     def get_queryset(self):
         """
@@ -708,6 +707,7 @@ class Versionable(models.Model):
     class Meta:
         abstract = True
         unique_together = ('id', 'identity')
+        base_manager_name = 'objects'
 
     def __init__(self, *args, **kwargs):
         super(Versionable, self).__init__(*args, **kwargs)

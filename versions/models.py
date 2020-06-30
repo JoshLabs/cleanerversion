@@ -952,7 +952,7 @@ class Versionable(models.Model):
 
         earlier_version = self
 
-        later_version = copy.copy(earlier_version)
+        later_version = copy.deepcopy(earlier_version)
         # Contrary to previous implementation we would assign a new UUID to every new versioned object
         later_version.id = None
         later_version.unique_id = self.uuid()

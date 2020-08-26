@@ -757,7 +757,7 @@ class Versionable(models.Model):
 
     class Meta:
         abstract = True
-        unique_together = ('unique_id', 'identity')
+        unique_together = (('identity', 'unique_id'),)
         base_manager_name = 'all_objects'
 
     def __init__(self, *args, **kwargs):
